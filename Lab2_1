@@ -1,0 +1,105 @@
+#include <semaphore>
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
+#include <chrono>
+#include <algorithm>
+
+std::counting_semaphore<4> sem1(4);
+
+class ThreadTask{
+    private:
+        int id;
+        int priority;
+        int task;
+    public:
+        ThreadTask(int i, int p, int t):
+            id(i), priority(p), task(t){}
+        int getId(){
+            return id;
+        }
+        int getPriority(){
+            return priority;
+        }
+        int getTask(){
+            return task;
+        }
+        bool operator<(const ThreadTask& other) const {
+            return priority > other.priority; 
+        }       
+};
+
+class TaskQueue{
+    private:
+        std::vector<ThreadTask> tasks;
+        std::mutex queue_mutex;
+    public:
+        void addTask(ThreadTask task){
+            std::lock_guard lock(queue_mutex);
+            tasks.push_back(task);
+            std::sort(tasks.begin(),tasks.end());
+        }
+        bool getNextTask(ThreadTask& task){
+            std::lock_guard lock(queue_mutex);
+            if(tasks.empty()) return false;
+
+            task = tasks.back();
+            tasks.pop_back();
+            return true;
+        }
+
+};
+
+void threadFunction(TaskQueue& tasks){
+    std::mutex cout_mutex;
+    while(true){
+    ThreadTask task(0,0,0);
+    if (!tasks.getNextTask(task)) break;
+
+    int id = task.getId();
+
+
+    sem1.acquire();
+
+    switch(task.getTask()){
+        case 1:
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        break;
+        case 2:
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        break;
+        case 3:
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        break;
+        default:
+        std::cerr << "Unknown task" << std::endl;
+    }
+
+    std::lock_guard lock(cout_mutex);
+    std::cout << "Task " << id << " completed" << std::endl;
+
+    sem1.release();
+    }
+}
+
+int main(){
+    TaskQueue tasks;
+
+    for(int i = 1; i <= 20;  i++){
+        tasks.addTask(ThreadTask(i, rand() % 4 + 1, rand() % 3 + 1));
+    }
+
+    std::thread threads[10];
+    for(int i = 0; i < 10; i++){
+        threads[i] = std::thread(threadFunction, std::ref(tasks));
+    }
+
+    for (auto& t: threads){
+        t.join();
+    }
+
+    std::cout << "All tasks completed" << std::endl;
+
+    return 0;
+}
